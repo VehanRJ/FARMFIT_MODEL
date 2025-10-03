@@ -211,16 +211,40 @@ async def analyze_form(file_img: UploadFile = File(...), file_csv: UploadFile = 
         img_array = np.expand_dims(img_array, axis=0)
 
         pred = model_img.predict(img_array)
-        top_idx = pred.argsort(axis=1)[0, -1]
-        label = label_dict[top_idx]
-        solution_text = solution_dict[top_idx]
-        confidence = f"{np.max(pred)*100:.2f}"
 
+        # Get top 3 indices (sorted high → low)
+        top_indices = pred.argsort(axis=1)[0, -3:][::-1]  # top 3 sorted high→low
+
+        # Apply Healthy rules
+        if label_dict[top_indices[0]] == "Healthy":
+            selected_indices = [top_indices[0]]            # only top
+        elif label_dict[top_indices[1]] == "Healthy":
+            selected_indices = [top_indices[0], top_indices[2]]  # skip second
+        else:
+            selected_indices = top_indices[:2].tolist()    # top 2 normally
+
+        # Ensure uniqueness
+        seen_labels = set()
+        unique_indices = []
+        for i in selected_indices:
+            label = label_dict[i]
+            if label not in seen_labels:
+                seen_labels.add(label)
+                unique_indices.append(i)
+
+        # Extract labels, solutions, and confidence
+        labels = [label_dict[i] for i in unique_indices]
+        solutions = [solution_dict[i] for i in selected_indices]
+        # Confidence only for the top prediction
+        top_confidence = [pred[0][unique_indices[0]] * 100]  
+
+        # Final result as lists
         image_result = {
-            "prediction": label,
-            "solution": solution_text,
-            "confidence": confidence
+            "prediction": labels,       # list of labels
+            "solution": " | ".join(solutions),      # list of solutions
+            "confidence": top_confidence  # list with only top confidence
         }
+
 
         # ---------- DATASET ----------
         df = pd.read_csv(file_csv.file)
